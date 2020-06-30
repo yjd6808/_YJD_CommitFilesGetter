@@ -19,51 +19,18 @@ enum SavePathType
     eIgnorePath
 }
 
-enum SaveEncodingType
-{
-    eUnknown
-    eString
-    eUnicode
-    eUnicodeBigEndian
-    eUTF7
-    eUTF8
-    eUTF32
-    eASCII
-    eDefault
-    eOEM
-}
-
-
 class Program
 {
     [SavePathType]$m_eSavePathType
-    [SaveEncodingType]$m_eSaveEncodingType
     [string]$m_Log
     [Array]$m_Setting
-    [HashTable]$m_EncodingMap =
-    @{ 
-            [SaveEncodingType]::eUnknown = 'unknown';
-            [SaveEncodingType]::eString = 'string';
-            [SaveEncodingType]::eUnicode = 'unicode';
-            [SaveEncodingType]::eUnicodeBigEndian = 'bigendianunicode';
-            [SaveEncodingType]::eUTF7 = 'utf7';
-            [SaveEncodingType]::eUTF8 = 'utf8';
-            [SaveEncodingType]::eUTF32 = 'utf32';
-            [SaveEncodingType]::eDefault = 'default';
-            [SaveEncodingType]::eASCII = 'ascii';
-            [SaveEncodingType]::eOEM = 'oem';
-    }
 
     Program()
     {
         $settingFilePath = [Path]::Combine([Directory]::GetParent($PSScriptRoot).FullName, "Setting.ini")
         $this.LoadSettingFile($settingFilePath)
         $this.m_eSavePathType = [Enum]::Parse([SavePathType], $this.m_Setting.Option.SavePathType) 
-        $this.m_eSaveEncodingType = [Enum]::Parse([SaveEncodingType], $this.m_Setting.Option.SaveEncodingType) 
         [GitManager]::Initialize()
-        [GitManager]::SetOutputEncoding($this.m_EncodingMap[$this.m_eSaveEncodingType])
-
-
     }
 
     hidden [void] LoadSettingFile([string]$path)
@@ -95,15 +62,14 @@ class Program
             $CommitHash = "HEAD"
         }
 
-
+        
         $CommitFileList = [GitManager]::GetCommitFiles($GitPath, $CommitHash).tag1
-        $OutputPath = [Directory]::CreateDirectory([Path]::Combine($GetterPath, [DateTime]::Now.ToString("yyyy-MM-dd tt-HH-mm-ss - 결과"))).FullName
+        $OutputPath = [Directory]::CreateDirectory([Path]::Combine($GetterPath, $CommitHash)).FullName
         $completeFileCount = 0
         [Console]::Clear()
 
         
         $this.m_Log += "커밋 해쉬 : " + $CommitHash + " / " + "출력일 : " + [DateTime]::Now.ToString("yyyy-MM-dd tt-HH-mm-ss") + "`r`n`r`n"
-        $this.m_Log += "[인코딩]`r`n {0} `r`n`r`n" -f $this.m_eSaveEncodingType.ToString()
         $this.m_Log += "[목록]`r`n"
 
         foreach ($commitFile in $CommitFileList)

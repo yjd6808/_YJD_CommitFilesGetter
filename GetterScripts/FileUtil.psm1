@@ -300,6 +300,33 @@ class FileUtil
         return $false;
     }
 
+    <#########################################################################
+                          파일 경로를 리눅스 스타일로 변환
+
+    윈도우상에 우분투 경로임
+    ##########################################################################>
+    static [string] ChangePathStyleToLinux([string]$path)
+    {
+        [string]$rootPath = [Path]::GetPathRoot($path)
+        $rootPath = $rootPath.Replace( '\', '/' )
+        $path = $path.Replace( '\', '/' )
+
+        if ($rootPath.Length -gt 1)
+        {
+            $path = $path.Replace( $rootPath, "/mnt/c/" )
+            
+        }
+        else
+        {
+            if ($path.StartsWith("/"))
+            {
+                $path = $path.Substring(1)
+            }
+        }
+
+        return $path
+    }
+
 
     <#########################################################################
      Json 파일 읽기 (어셈블리 참조 후 사용해야함)

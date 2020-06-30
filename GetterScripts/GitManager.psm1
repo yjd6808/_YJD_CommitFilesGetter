@@ -6,6 +6,7 @@
 ####################################################
 # 현재 이 깃 매니저는 완성도가 높지않다.
 # 깃 함수 실패여부를 제대로 받아내는 기능을 구현할 필요가 있다.
+# 전부 갈아엎어야하는 코드임
 # 우선 작동하는데로 구현해보자.
 # $LASTEXITCODE 응용하면 해결가능 할 듯(팀장님 코드 참고) 언젠가.. 시간나면.. 
 ####################################################
@@ -51,6 +52,7 @@ using namespace System.Text
 using namespace System.Collections.Generic
 using namespace System.Management.Automation
 
+
 class GitCommandResult
 {
     [object]$message        #결과 메시지
@@ -75,39 +77,31 @@ class GitCommandResult
 class GitManager
 {
     static [DefaultParameterDictionary] $s_DefaultParameterValues = $PSDefaultParameterValues
-    static [string]                     $s_GitEXEPath = ""
+    static [bool]                       $s_IsBashInitialized = $false
+    static [string]                     $s_GitCmdPath = ""
+    static [string]                     $s_GitBashPath = ""
     
     [void] static Initialize()
     {
         #깃 설치 경로 지정
+        [GitManager]::s_GitCmdPath = & (Join-Path -Path ([Environment]::SystemDirectory) -ChildPath 'where.exe') git
 
-        $find = $false
-        $gitEnvPath = ""
-
-        foreach ($path in $env:Path.Split(';'))
+        if ((Test-Path ([GitManager]::s_GitCmdPath)) -eq $false)
         {
-            if ($path.Contains('Git\cmd'))
-            {
-                $gitEnvPath = $path.Trim()
-                $find = $true
-            }
-        }
-
-        if ($find -eq $false)
-        {
-            [Logger]::WriteLineError("깃 설치경로를 찾지 못했습니다. 환경변수에 등록되어있는지 확인 부탁드립니다.", "")
+            [Logger]::WriteLineNotice("깃이 설치되어 있지 않습니다", "")
             exit -1
         }
 
-        [GitManager]::s_GitEXEPath = [Path]::Combine( [Directory]::GetParent($gitEnvPath).FullName, 'bin/git.exe')
-        if ([File]::Exists([GitManager]::s_GitEXEPath) -eq $false)
+        [GitManager]::s_GitBashPath = Join-Path -Path  ([Directory]::GetParent([Path]::GetDirectoryName([GitManager]::s_GitCmdPath))) -ChildPath 'bin/bash.exe'
+
+        if ((Test-Path ([GitManager]::s_GitBashPath)) -eq $false)
         {
-            [Logger]::WriteLineError("깃 exe 경로 찾지 못했습니다. {0}" -f [GitManager]::s_GitEXEPath, "")
-           exit -1
+            [Logger]::WriteLineNotice("{0} 깃의 bash.exe 파일이 존재하지 않습니다" -f [GitManager]::s_GitBashPath, "")
+            exit -1
         }
 
-        [GitManager]::s_GitEXEPath = [GitManager]::s_GitEXEPath.Replace('\', '/')
-        [Logger]::WriteLineNotice("Git 설치 확인 및 경로지정 완료 (설치 경로 {0})" -f [GitManager]::s_GitEXEPath)
+        [GitManager]::s_IsBashInitialized = $true
+        [Logger]::WriteLineNotice("Git 설치 확인 및 Bash 경로지정 완료 (설치 경로 {0})" -f [GitManager]::s_GitBashPath)
     }
 
     [void] static SetOutputEncoding([string]$encodingType)
@@ -1192,7 +1186,7 @@ class GitManager
 
         if (([string]$result.message).Trim().Length -eq 0)
         {
-            $result.result = $
+            $result.result = $false
         }
 
 
@@ -1319,6 +1313,11 @@ class GitManager
     
     [GitCommandResult] static SaveFileAsInSpecificCommitHash([string]$gitPath, [string]$commitHash, [string]$srcFileMiddlePath, [string]$dstFileFullPath)
     {
+        if ([GitManager]::s_IsBashInitialized -eq $false)
+        {
+            [Logger]::WriteLineErrorCovered("깃 배쉬경로가 초기화 되지 않았습니다. [GitMananger]::Initialize() 함수를 호출하여 먼저 배요쉬 경로를 지정해주세", "이 기능은 bash 명령어를 사용합니다")
+        }
+
         if( (Test-Path $gitPath) -eq $false )
         {
             [Logger]::WriteLineErrorCovered($gitPath + "경로가 존재하지 않습니다", "올바른 깃 경로를 입력해주세요")
@@ -1329,16 +1328,21 @@ class GitManager
         Set-Location -Path $gitPath
 
         [string]$hashWithMiddlePath = $commitHash + ":" + $srcFileMiddlePath
+        [Directory]::CreateDirectory([Path]::GetDirectoryName($dstFileFullPath))
 
-        
-        $result.message = git show $hashWithMiddlePath > $dstFileFullPath
-        $result.result = [GitManager]::IsCommandSuccess($result.message)
+        $gitCmdScript = 
+        '
+            git show {0} > {1}
+        '  -f $hashWithMiddlePath, $dstFileFullPath -replace "`r", ""
+        & ([GitManager]::s_GitBashPath) -c $gitCmdScript | Out-String
 
-        #꼼수 깃 exe로 복사해오면 제대로됨..
-        if ([FileUtil]::IsBinaryFile($dstFileFullPath))
+        if ($LASTEXITCODE -eq 0)
         {
-            $comm = "show {0} > {1}" -f $hashWithMiddlePath, $dstFileFullPath
-            & ([GitManager]::s_GitEXEPath) $comm
+            $result.result = $true
+        }
+        else
+        {
+            $result.result = $false
         }
 
         if ($result.result -eq $true)
